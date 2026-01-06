@@ -30,18 +30,32 @@ st.set_page_config(
 )
 
 # ==========================================
-# 🔤 解決 Matplotlib 中文亂碼 (關鍵修正)
+# 🔤 解決 Matplotlib 中文亂碼 (強力修正版)
 # ==========================================
 def set_chinese_font():
     system = platform.system()
-    if system == "Windows":
-        plt.rcParams['font.sans-serif'] = ['Microsoft JhengHei'] # 微軟正黑體
-    elif system == "Darwin": # Mac
-        plt.rcParams['font.sans-serif'] = ['Arial Unicode MS'] # Mac 通用中文
-    else: 
-        # Linux / Streamlit Cloud (需要配合 packages.txt 安裝 fonts-wqy-zenhei)
-        plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei'] 
     
+    # 1. Windows 系統
+    if system == "Windows":
+        plt.rcParams['font.sans-serif'] = ['Microsoft JhengHei']
+        
+    # 2. Mac 系統
+    elif system == "Darwin":
+        plt.rcParams['font.sans-serif'] = ['Arial Unicode MS']
+        
+    # 3. Linux / Streamlit Cloud 系統
+    else:
+        # Streamlit Cloud 上，fonts-wqy-zenhei 安裝的路徑通常在這裡：
+        font_path = "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"
+        
+        # 如果檔案存在，強制加入字型管理員
+        if os.path.exists(font_path):
+            fm.fontManager.addfont(font_path) # 加入字型
+            plt.rcParams['font.family'] = ['WenQuanYi Zen Hei'] # 設定為預設
+        else:
+            # 備用方案：如果路徑找不到，嘗試直接用名稱
+            plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei']
+
     plt.rcParams['axes.unicode_minus'] = False # 解決負號顯示為方塊的問題
 
 set_chinese_font() # 程式啟動時立即執行
@@ -128,32 +142,34 @@ def generate_fallback_strategy(ticker, d):
         action = "區間操作 (Range)"
         bg = "#fff3e0" # Orange bg
 
+    # 這裡移除了縮排，避免被當作程式碼區塊
     html = f"""
-    <div style='background-color:{bg}; padding:12px; border-radius:8px; margin-top:10px; font-size:14px; line-height:1.6;'>
-        <div style='font-weight:bold; color:#555; margin-bottom:5px;'>🤖 系統自動診斷 (AI 連線備援)</div>
-        <ul style='margin:0; padding-left:20px;'>
-            <li><b>{trend_icon} 趨勢：</b>{trend}。</li>
-            <li><b>⚡ 動能：</b>{mom} (RSI: {d['rsi']:.0f})。</li>
-            <li><b>🧱 籌碼：</b>{chip}。</li>
-        </ul>
-        <hr style='border-top:1px dashed #ccc; margin:8px 0;'>
-        <div><b>🎯 操作建議：{action}</b></div>
-        <div style='font-size:12px; color:#777;'>建議停損：{d['atr']*2:.2f} (2xATR)</div>
-    </div>
-    """
+<div style='background-color:{bg}; padding:12px; border-radius:8px; margin-top:10px; font-size:14px; line-height:1.6;'>
+    <div style='font-weight:bold; color:#555; margin-bottom:5px;'>🤖 系統自動診斷 (AI 連線備援)</div>
+    <ul style='margin:0; padding-left:20px;'>
+        <li><b>{trend_icon} 趨勢：</b>{trend}。</li>
+        <li><b>⚡ 動能：</b>{mom} (RSI: {d['rsi']:.0f})。</li>
+        <li><b>🧱 籌碼：</b>{chip}。</li>
+    </ul>
+    <hr style='border-top:1px dashed #ccc; margin:8px 0;'>
+    <div><b>🎯 操作建議：{action}</b></div>
+    <div style='font-size:12px; color:#777;'>建議停損：{d['atr']*2:.2f} (2xATR)</div>
+</div>
+"""
     return html
 
 def generate_fallback_brief(tickers):
     t_str = ", ".join(tickers)
+    # 這裡移除了縮排
     return f"""
-    <h4>🚨 市場連線壅塞 (System Notice)</h4>
-    <p>由於 Google AI 伺服器暫時無法回應 (IP Rate Limit)，本份早報由系統演算法自動生成。</p>
-    <ul>
-      <li><b>今日觀察清單：</b>{t_str}。</li>
-      <li><b>操作提醒：</b>請直接參考下方個股卡片中的<b>「量化評分 (Score)」</b>與<b>「R/R 風報比」</b>。</li>
-      <li><b>資金流向：</b>評分 > 6 且 RVOL > 1.2 之個股，代表資金動能強勁。</li>
-    </ul>
-    """
+<h4>🚨 市場連線壅塞 (System Notice)</h4>
+<p>由於 Google AI 伺服器暫時無法回應 (IP Rate Limit)，本份早報由系統演算法自動生成。</p>
+<ul>
+  <li><b>今日觀察清單：</b>{t_str}。</li>
+  <li><b>操作提醒：</b>請直接參考下方個股卡片中的<b>「量化評分 (Score)」</b>與<b>「R/R 風報比」</b>。</li>
+  <li><b>資金流向：</b>評分 > 6 且 RVOL > 1.2 之個股，代表資金動能強勁。</li>
+</ul>
+"""
 
 # ==========================================
 # 📊 技術指標運算
@@ -206,7 +222,7 @@ def calculate_volume_profile(df, bins=50):
 # 📈 數據與繪圖
 # ==========================================
 
-@st.cache_data(ttl=300) # 快取 5 分鐘，避免重複按按鈕時一直重跑
+@st.cache_data(ttl=300) # 快取 5 分鐘
 def get_stock_data(ticker):
     try:
         stock = yf.Ticker(ticker)
@@ -354,38 +370,38 @@ def process_single_stock(ticker):
     rvol_color = "#d35400" if rvol > 1.2 else "#555"
     currency = "NT$" if is_tw else "$"
 
-    # 組合卡片 HTML
+    # 組合卡片 HTML (移除縮排)
     card_html = f"""
-    <div style="border:1px solid #e0e0e0; border-radius:12px; padding:16px; margin-bottom:20px; background-color: white; color: #333; {FONT_STYLE}">
-        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-            <div>
-                <h2 style="margin:0; color:#2c3e50;">{ticker} <span style="font-size:14px; color:#aaa; font-weight:normal;">(Score: {score}/8)</span></h2>
-                <div style="font-size:12px; color:#999;">{last_dt}</div>
-            </div>
-            <div style="text-align:right;">
-                <div style="font-size:24px; font-weight:800; color:#2c3e50;">{currency}{current_price:.2f}</div>
-            </div>
+<div style="border:1px solid #e0e0e0; border-radius:12px; padding:16px; margin-bottom:20px; background-color: white; color: #333; {FONT_STYLE}">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+        <div>
+            <h2 style="margin:0; color:#2c3e50;">{ticker} <span style="font-size:14px; color:#aaa; font-weight:normal;">(Score: {score}/8)</span></h2>
+            <div style="font-size:12px; color:#999;">{last_dt}</div>
         </div>
-
-        <div style="display:flex; justify-content:space-between; margin-top:10px; background:#f8f9fa; padding:8px; border-radius:8px;">
-            <div style="text-align:center;"><div style="font-size:10px; color:#777;">RVOL</div><div style="font-weight:bold; color:{rvol_color}">{rvol:.1f}x</div></div>
-            <div style="text-align:center;"><div style="font-size:10px; color:#777;">R/R</div><div style="font-weight:bold; color:{rr_color}">{rr_display}</div></div>
-            <div style="text-align:center;"><div style="font-size:10px; color:#777;">ATR</div><div style="font-weight:bold;">{df['ATR'].iloc[-1]:.1f}</div></div>
-            <div style="text-align:center;"><div style="font-size:10px; color:#777;">RSI</div><div style="font-weight:bold;">{df['RSI'].iloc[-1]:.0f}</div></div>
-        </div>
-        
-        <div style="margin-top:8px; font-size:12px; color:#555; display:flex; justify-content:space-between; padding:0 5px;">
-             <span>🛡️ 支撐: <b>{currency}{support:.2f}</b></span>
-             <span>🎯 目標: <b>{currency}{resistance:.2f}</b></span>
-        </div>
-
-        <div style="margin-top:10px;">{chart_html}</div>
-        
-        <div style="margin-top:15px; padding-top:10px; border-top:1px dashed #eee; font-size:14px; line-height:1.5;">
-            {strategy_html}
+        <div style="text-align:right;">
+            <div style="font-size:24px; font-weight:800; color:#2c3e50;">{currency}{current_price:.2f}</div>
         </div>
     </div>
-    """
+
+    <div style="display:flex; justify-content:space-between; margin-top:10px; background:#f8f9fa; padding:8px; border-radius:8px;">
+        <div style="text-align:center;"><div style="font-size:10px; color:#777;">RVOL</div><div style="font-weight:bold; color:{rvol_color}">{rvol:.1f}x</div></div>
+        <div style="text-align:center;"><div style="font-size:10px; color:#777;">R/R</div><div style="font-weight:bold; color:{rr_color}">{rr_display}</div></div>
+        <div style="text-align:center;"><div style="font-size:10px; color:#777;">ATR</div><div style="font-weight:bold;">{df['ATR'].iloc[-1]:.1f}</div></div>
+        <div style="text-align:center;"><div style="font-size:10px; color:#777;">RSI</div><div style="font-weight:bold;">{df['RSI'].iloc[-1]:.0f}</div></div>
+    </div>
+    
+    <div style="margin-top:8px; font-size:12px; color:#555; display:flex; justify-content:space-between; padding:0 5px;">
+            <span>🛡️ 支撐: <b>{currency}{support:.2f}</b></span>
+            <span>🎯 目標: <b>{currency}{resistance:.2f}</b></span>
+    </div>
+
+    <div style="margin-top:10px;">{chart_html}</div>
+    
+    <div style="margin-top:15px; padding-top:10px; border-top:1px dashed #eee; font-size:14px; line-height:1.5;">
+        {strategy_html}
+    </div>
+</div>
+"""
     return card_html, ticker, rank_data
 
 # ==========================================
@@ -395,19 +411,22 @@ def process_single_stock(ticker):
 def generate_ranking_html(rank_list):
     if not rank_list: return ""
     sorted_list = sorted(rank_list, key=lambda x: (x['score'], x['rvol']), reverse=True)
+    
+    # 這裡移除了縮排
     html = f"""
-    <div style='background-color:#f0f4c3; color:#33691e; padding:15px; border-radius:12px; margin-bottom:25px; border:2px solid #dce775; {FONT_STYLE}'>
-        <h3 style='margin-top:0; border-bottom:1px solid #c0ca33; padding-bottom:10px;'>🏆 AI 資金效率排行榜</h3>
-        <table style='width:100%; font-size:14px; border-collapse: collapse;'>
-            <tr style='text-align:left; color:#558b2f;'>
-                <th style='padding:5px;'>Rank</th><th style='padding:5px;'>Symbol</th><th style='padding:5px;'>Score</th><th style='padding:5px;'>RVOL</th><th style='padding:5px;'>Price</th>
-            </tr>
-    """
+<div style='background-color:#f0f4c3; color:#33691e; padding:15px; border-radius:12px; margin-bottom:25px; border:2px solid #dce775; {FONT_STYLE}'>
+    <h3 style='margin-top:0; border-bottom:1px solid #c0ca33; padding-bottom:10px;'>🏆 AI 資金效率排行榜</h3>
+    <table style='width:100%; font-size:14px; border-collapse: collapse;'>
+        <tr style='text-align:left; color:#558b2f;'>
+            <th style='padding:5px;'>Rank</th><th style='padding:5px;'>Symbol</th><th style='padding:5px;'>Score</th><th style='padding:5px;'>RVOL</th><th style='padding:5px;'>Price</th>
+        </tr>
+"""
     for i, item in enumerate(sorted_list):
         rank_num = i + 1
         score_color = "#2e7d32" if item['score'] >= 6 else "#f57f17" if item['score'] >= 4 else "#c62828"
         row_bg = "#f9fbe7" if i % 2 == 0 else "transparent"
         currency = "NT$" if item['market'] == "TW" else "$"
+        # 這裡移除了縮排
         html += f"""
         <tr style='background-color:{row_bg}; border-bottom:1px dashed #e6ee9c;'>
             <td style='padding:8px; font-weight:bold;'>#{rank_num}</td>
@@ -416,7 +435,7 @@ def generate_ranking_html(rank_list):
             <td style='padding:8px;'>{item['rvol']:.1f}x</td>
             <td style='padding:8px;'>{currency}{item['price']:.2f}</td>
         </tr>
-        """
+"""
     html += "</table></div>"
     return html
 
@@ -425,7 +444,8 @@ def generate_ranking_html(rank_list):
 # ==========================================
 
 st.title("🚀 AI 量化操盤助手 (Streamlit 版)")
-st.markdown("""
+# 這裡移除了縮排
+st.markdown(f"""
 <div style='background-color:#e3f2fd; color:#0d47a1; padding:15px; border-radius:10px; margin-bottom:20px;'>
     <b>混合分析模式：</b>優先嘗試連線 AI，若連線忙碌將自動切換至量化演算法，保證產出報告。<br>
     <span style='font-size:12px; color:#555;'>已啟用中文圖表修正</span>
@@ -504,12 +524,13 @@ if run_btn:
             # 5. 渲染結果
             
             # A. 早報區塊
+            # 這裡移除了縮排
             final_header = f"""
-            <div style='background-color:#fffbeb; color:#2c3e50; padding:20px; border-radius:12px; margin-bottom:25px; border:2px solid #f1c40f; box-shadow: 0 4px 10px rgba(0,0,0,0.05); {FONT_STYLE}'>
-                <h3 style='margin-top:0; color:#d35400; border-bottom:1px solid #f39c12; padding-bottom:10px;'>☕ 華爾街交易員早報 (Morning Brief)</h3>
-                <div style='font-size:15px; line-height:1.6;'>{brief_html}</div>
-            </div>
-            """
+<div style='background-color:#fffbeb; color:#2c3e50; padding:20px; border-radius:12px; margin-bottom:25px; border:2px solid #f1c40f; box-shadow: 0 4px 10px rgba(0,0,0,0.05); {FONT_STYLE}'>
+    <h3 style='margin-top:0; color:#d35400; border-bottom:1px solid #f39c12; padding-bottom:10px;'>☕ 華爾街交易員早報 (Morning Brief)</h3>
+    <div style='font-size:15px; line-height:1.6;'>{brief_html}</div>
+</div>
+"""
             st.markdown(final_header, unsafe_allow_html=True)
 
             # B. 排行榜區塊
