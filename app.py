@@ -10,7 +10,6 @@ import shutil
 # 🔧 強制重設 Matplotlib 設定
 # ==========================================
 # 1. 刪除 Matplotlib 的快取資料夾 (核彈級解法)
-# 這會強迫 Matplotlib 下次執行時重新掃描系統字型，解決方塊字殘留問題
 try:
     cachedir = matplotlib.get_cachedir()
     if os.path.exists(cachedir):
@@ -51,7 +50,6 @@ try:
     GEMINI_KEY = st.secrets["GEMINI_API_KEY"]
 except:
     GEMINI_KEY = None
-    # 這裡不顯示錯誤，改用 Warning，讓程式繼續運行演算法模式
     print("⚠️ 系統提示：未檢測到 GEMINI_API_KEY，將自動切換至「演算法備援模式」。")
 
 # --- 全域樣式 ---
@@ -125,18 +123,18 @@ def generate_fallback_strategy(ticker, d):
         action = "區間操作 (Range)"
         bg = "#fff3e0" # Orange bg
 
-    # 注意：HTML 字串無縮排
+    # 注意：HTML 字串無縮排 (靠左對齊)，這是為了避免 Markdown 解析錯誤
     html = f"""
 <div style='background-color:{bg}; padding:12px; border-radius:8px; margin-top:10px; font-size:14px; line-height:1.6;'>
-    <div style='font-weight:bold; color:#555; margin-bottom:5px;'>🤖 系統自動診斷 (AI 連線備援)</div>
-    <ul style='margin:0; padding-left:20px;'>
-        <li><b>{trend_icon} 趨勢：</b>{trend}。</li>
-        <li><b>⚡ 動能：</b>{mom} (RSI: {d['rsi']:.0f})。</li>
-        <li><b>🧱 籌碼：</b>{chip}。</li>
-    </ul>
-    <hr style='border-top:1px dashed #ccc; margin:8px 0;'>
-    <div><b>🎯 操作建議：{action}</b></div>
-    <div style='font-size:12px; color:#777;'>建議停損：{d['atr']*2:.2f} (2xATR)</div>
+<div style='font-weight:bold; color:#555; margin-bottom:5px;'>🤖 系統自動診斷 (AI 連線備援)</div>
+<ul style='margin:0; padding-left:20px;'>
+<li><b>{trend_icon} 趨勢：</b>{trend}。</li>
+<li><b>⚡ 動能：</b>{mom} (RSI: {d['rsi']:.0f})。</li>
+<li><b>🧱 籌碼：</b>{chip}。</li>
+</ul>
+<hr style='border-top:1px dashed #ccc; margin:8px 0;'>
+<div><b>🎯 操作建議：{action}</b></div>
+<div style='font-size:12px; color:#777;'>建議停損：{d['atr']*2:.2f} (2xATR)</div>
 </div>
 """
     return html
@@ -148,9 +146,9 @@ def generate_fallback_brief(tickers):
 <h4>🚨 市場連線壅塞 (System Notice)</h4>
 <p>由於 Google AI 伺服器暫時無法回應 (IP Rate Limit)，本份早報由系統演算法自動生成。</p>
 <ul>
-  <li><b>今日觀察清單：</b>{t_str}。</li>
-  <li><b>操作提醒：</b>請直接參考下方個股卡片中的<b>「量化評分 (Score)」</b>與<b>「R/R 風報比」</b>。</li>
-  <li><b>資金流向：</b>評分 > 6 且 RVOL > 1.2 之個股，代表資金動能強勁。</li>
+<li><b>今日觀察清單：</b>{t_str}。</li>
+<li><b>操作提醒：</b>請直接參考下方個股卡片中的<b>「量化評分 (Score)」</b>與<b>「R/R 風報比」</b>。</li>
+<li><b>資金流向：</b>評分 > 6 且 RVOL > 1.2 之個股，代表資金動能強勁。</li>
 </ul>
 """
 
@@ -283,133 +281,4 @@ def process_single_stock(ticker):
     curr_vol = df['Volume'].iloc[-1]
     rvol = curr_vol / avg_vol if avg_vol > 0 else 0
     
-    # 風險報酬比 (R/R)
-    support = df['MA50'].iloc[-1]
-    resistance = df['High'].tail(252).max()
-    if current_price >= resistance * 0.99: resistance = current_price * 1.2
-    
-    risk = current_price - support
-    reward = resistance - current_price
-    if risk > 0:
-        rr_val = reward / risk
-        rr_display = f"1 : {rr_val:.1f}"
-        if rr_val >= 3: rr_color = "#27ae60"
-        elif rr_val >= 2: rr_color = "#2980b9"
-        else: rr_color = "#c0392b"
-    else:
-        rr_val = 0
-        rr_display = "⚠️ 風險高"
-        rr_color = "#c0392b"
-
-    # 量化評分 (Score)
-    score = 0
-    if current_price > df['MA20'].iloc[-1]: score += 1
-    if current_price > df['MA50'].iloc[-1]: score += 1
-    if df['MA20'].iloc[-1] > df['MA50'].iloc[-1]: score += 1
-    if df['RSI'].iloc[-1] > 50: score += 1
-    if macd.iloc[-1] > signal.iloc[-1]: score += 1
-    if df['ADX'].iloc[-1] > 25: score += 1
-    if current_price > poc_price: score += 1
-    if rvol > 1.2: score += 1
-
-    # 數據包 (給 AI 或 備援用)
-    data_dict = {
-        'price': current_price,
-        'ma20': df['MA20'].iloc[-1],
-        'ma50': df['MA50'].iloc[-1],
-        'rvol': rvol,
-        'atr': df['ATR'].iloc[-1],
-        'adx': df['ADX'].iloc[-1],
-        'rsi': df['RSI'].iloc[-1],
-        'vpoc': poc_price,
-        'score': score
-    }
-
-    rank_data = {
-        'ticker': ticker,
-        'score': score,
-        'rvol': rvol,
-        'price': current_price,
-        'market': 'TW' if is_tw else 'US'
-    }
-    
-    # 策略生成 (優先 AI，失敗則備援)
-    prompt = f"""
-    量化交易員分析 {ticker}。
-    Price: {current_price:.2f}, RVOL: {rvol:.2f}, ATR: {df['ATR'].iloc[-1]:.2f}, 
-    ADX: {df['ADX'].iloc[-1]:.0f}, RSI: {df['RSI'].iloc[-1]:.0f}, VPOC: {poc_price:.2f}
-    請用 HTML (<h4>, <ul>) 給出：1. 量化診斷 2. 交易計劃 (含停損)。精簡。
-    """
-    ai_result = call_gemini_api(prompt)
-    
-    if ai_result:
-        strategy_html = f"<div>{ai_result}</div><div style='font-size:10px; color:#aaa; text-align:right;'>Analysis by Gemini</div>"
-    else:
-        strategy_html = generate_fallback_strategy(ticker, data_dict)
-    
-    # 產生圖表
-    chart_html = create_chart_image(df, ticker, poc_price)
-    
-    rvol_color = "#d35400" if rvol > 1.2 else "#555"
-    currency = "NT$" if is_tw else "$"
-
-    # 組合卡片 HTML (注意：無縮排)
-    card_html = f"""
-<div style="border:1px solid #e0e0e0; border-radius:12px; padding:16px; margin-bottom:20px; background-color: white; color: #333; {FONT_STYLE}">
-    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-        <div>
-            <h2 style="margin:0; color:#2c3e50;">{ticker} <span style="font-size:14px; color:#aaa; font-weight:normal;">(Score: {score}/8)</span></h2>
-            <div style="font-size:12px; color:#999;">{last_dt}</div>
-        </div>
-        <div style="text-align:right;">
-            <div style="font-size:24px; font-weight:800; color:#2c3e50;">{currency}{current_price:.2f}</div>
-        </div>
-    </div>
-
-    <div style="display:flex; justify-content:space-between; margin-top:10px; background:#f8f9fa; padding:8px; border-radius:8px;">
-        <div style="text-align:center;"><div style="font-size:10px; color:#777;">RVOL</div><div style="font-weight:bold; color:{rvol_color}">{rvol:.1f}x</div></div>
-        <div style="text-align:center;"><div style="font-size:10px; color:#777;">R/R</div><div style="font-weight:bold; color:{rr_color}">{rr_display}</div></div>
-        <div style="text-align:center;"><div style="font-size:10px; color:#777;">ATR</div><div style="font-weight:bold;">{df['ATR'].iloc[-1]:.1f}</div></div>
-        <div style="text-align:center;"><div style="font-size:10px; color:#777;">RSI</div><div style="font-weight:bold;">{df['RSI'].iloc[-1]:.0f}</div></div>
-    </div>
-    
-    <div style="margin-top:8px; font-size:12px; color:#555; display:flex; justify-content:space-between; padding:0 5px;">
-            <span>🛡️ 支撐: <b>{currency}{support:.2f}</b></span>
-            <span>🎯 目標: <b>{currency}{resistance:.2f}</b></span>
-    </div>
-
-    <div style="margin-top:10px;">{chart_html}</div>
-    
-    <div style="margin-top:15px; padding-top:10px; border-top:1px dashed #eee; font-size:14px; line-height:1.5;">
-        {strategy_html}
-    </div>
-</div>
-"""
-    return card_html, ticker, rank_data
-
-# ==========================================
-# 📊 排行榜
-# ==========================================
-
-def generate_ranking_html(rank_list):
-    if not rank_list: return ""
-    sorted_list = sorted(rank_list, key=lambda x: (x['score'], x['rvol']), reverse=True)
-    
-    # 注意：HTML 字串無縮排
-    html = f"""
-<div style='background-color:#f0f4c3; color:#33691e; padding:15px; border-radius:12px; margin-bottom:25px; border:2px solid #dce775; {FONT_STYLE}'>
-    <h3 style='margin-top:0; border-bottom:1px solid #c0ca33; padding-bottom:10px;'>🏆 AI 資金效率排行榜</h3>
-    <table style='width:100%; font-size:14px; border-collapse: collapse;'>
-        <tr style='text-align:left; color:#558b2f;'>
-            <th style='padding:5px;'>Rank</th><th style='padding:5px;'>Symbol</th><th style='padding:5px;'>Score</th><th style='padding:5px;'>RVOL</th><th style='padding:5px;'>Price</th>
-        </tr>
-"""
-    for i, item in enumerate(sorted_list):
-        rank_num = i + 1
-        score_color = "#2e7d32" if item['score'] >= 6 else "#f57f17" if item['score'] >= 4 else "#c62828"
-        row_bg = "#f9fbe7" if i % 2 == 0 else "transparent"
-        currency = "NT$" if item['market'] == "TW" else "$"
-        # 注意：HTML 字串無縮排
-        html += f"""
-        <tr style='background-color:{row_bg}; border-bottom:1px dashed #e6ee9c;'>
-            <td style='padding:8px; font-weight:bold;'>#{rank_num
+    #
