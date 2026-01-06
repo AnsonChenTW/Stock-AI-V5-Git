@@ -3,6 +3,36 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import matplotlib
+# ---------------------------------------------------------
+# 🔧 強制重設 Matplotlib 設定
+# ---------------------------------------------------------
+import shutil
+import matplotlib.font_manager
+
+# 1. 刪除 Matplotlib 的快取資料夾 (核彈級解法)
+# 這會強迫 Matplotlib 下次執行時重新掃描系統字型
+cachedir = matplotlib.get_cachedir()
+if os.path.exists(cachedir):
+    shutil.rmtree(cachedir)
+
+# 2. 設定後端為 Agg (非互動式，適合伺服器)
+matplotlib.use('Agg') 
+
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+# ---------------------------------------------------------
+
+import io
+import base64
+import re
+import time
+# ... (後面的 import 和程式碼保持不變)
+
+import streamlit as st
+import yfinance as yf
+import pandas as pd
+import numpy as np
+import matplotlib
 matplotlib.use('Agg') # 必須設定，防止在伺服器端報錯
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
