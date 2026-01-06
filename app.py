@@ -3,9 +3,11 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import matplotlib
-matplotlib.use('Agg')
+matplotlib.use('Agg') # 必須設定，防止在伺服器端報錯
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+import matplotlib.font_manager as fm
+import platform
 import io
 import base64
 import re
@@ -17,7 +19,9 @@ import requests
 import json
 import random
 
-# --- 設定頁面 ---
+# ==========================================
+# ⚙️ 頁面基礎設定
+# ==========================================
 st.set_page_config(
     page_title="AI 量化操盤助手",
     page_icon="🚀",
@@ -25,14 +29,33 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- 讀取 Secrets 中的 API Key ---
-# 在本地請建立 .streamlit/secrets.toml
-# 在 Streamlit Cloud 請於設定中的 Secrets 填寫
+# ==========================================
+# 🔤 解決 Matplotlib 中文亂碼 (關鍵修正)
+# ==========================================
+def set_chinese_font():
+    system = platform.system()
+    if system == "Windows":
+        plt.rcParams['font.sans-serif'] = ['Microsoft JhengHei'] # 微軟正黑體
+    elif system == "Darwin": # Mac
+        plt.rcParams['font.sans-serif'] = ['Arial Unicode MS'] # Mac 通用中文
+    else: 
+        # Linux / Streamlit Cloud (需要配合 packages.txt 安裝 fonts-wqy-zenhei)
+        plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei'] 
+    
+    plt.rcParams['axes.unicode_minus'] = False # 解決負號顯示為方塊的問題
+
+set_chinese_font() # 程式啟動時立即執行
+
+# ==========================================
+# 🔑 API Key 讀取與設定
+# ==========================================
 try:
+    # 優先從 Streamlit Secrets 讀取
     GEMINI_KEY = st.secrets["GEMINI_API_KEY"]
 except:
     GEMINI_KEY = None
-    st.warning("⚠️ 未檢測到 API Key，將僅使用演算法模式。請設定 GEMINI_API_KEY。")
+    # 這裡不顯示錯誤，改用 Warning，讓程式繼續運行演算法模式
+    print("⚠️ 系統提示：未檢測到 GEMINI_API_KEY，將自動切換至「演算法備援模式」。")
 
 # --- 全域樣式 ---
 FONT_STYLE = "font-family: -apple-system, system-ui, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;"
@@ -47,7 +70,6 @@ def call_gemini_api(prompt):
     """
     if not GEMINI_KEY: return None
 
-    # 只試這兩個最穩的，不行就拉倒，不要浪費時間
     models_to_try = ["gemini-1.5-flash", "gemini-pro"]
     headers = {'Content-Type': 'application/json'}
     data = {"contents": [{"parts": [{"text": prompt}]}]}
@@ -58,12 +80,14 @@ def call_gemini_api(prompt):
             # Timeout 設極短 (3秒)，連不上就馬上切換演算法，使用者體驗最好
             response = requests.post(url, headers=headers, json=data, timeout=3)
             if response.status_code == 200:
-                raw_text = response.json()['candidates'][0]['content']['parts'][0]['text']
-                return raw_text.replace("```html", "").replace("```", "").strip()
+                result = response.json()
+                if 'candidates' in result and result['candidates']:
+                    raw_text = result['candidates'][0]['content']['parts'][0]['text']
+                    return raw_text.replace("```html", "").replace("```", "").strip()
         except:
             continue
             
-    return None # 回傳 None 代表 AI 掛了，請用演算法接手
+    return None # 回傳 None 代表 AI 掛了/忙碌中，請用演算法接手
 
 # ==========================================
 # 🤖 演算法備援 (Rule-Based Fallback)
@@ -182,7 +206,7 @@ def calculate_volume_profile(df, bins=50):
 # 📈 數據與繪圖
 # ==========================================
 
-@st.cache_data(ttl=300) # 加上快取，5分鐘內重複查詢不重跑
+@st.cache_data(ttl=300) # 快取 5 分鐘，避免重複按按鈕時一直重跑
 def get_stock_data(ticker):
     try:
         stock = yf.Ticker(ticker)
@@ -196,20 +220,23 @@ def create_chart_image(df, ticker, poc_price):
     if len(df) < 50: return None
     plot_df = df.tail(150).copy() 
     
+    # 建立圖表：上圖(價格)佔 3 份，下圖(RSI)佔 1 份
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(6, 5), dpi=90, gridspec_kw={'height_ratios': [3, 1]})
     fig.patch.set_facecolor('white') 
     
-    ax1.plot(plot_df.index, plot_df['Close'], color='#333', linewidth=1.5, label='Price')
-    ax1.plot(plot_df.index, plot_df['MA20'], color='#f39c12', linewidth=1, alpha=0.8, label='MA20')
-    ax1.plot(plot_df.index, plot_df['MA50'], color='#27ae60', linewidth=1.5, alpha=0.8, label='MA50')
-    ax1.plot(plot_df.index, plot_df['MA200'], color='#2980b9', linewidth=1.5, alpha=0.8, label='MA200')
-    ax1.axhline(y=poc_price, color='purple', linestyle='--', linewidth=1, alpha=0.6, label='POC')
+    # 上圖：K線與均線
+    ax1.plot(plot_df.index, plot_df['Close'], color='#333', linewidth=1.5, label='收盤價')
+    ax1.plot(plot_df.index, plot_df['MA20'], color='#f39c12', linewidth=1, alpha=0.8, label='月線(20)')
+    ax1.plot(plot_df.index, plot_df['MA50'], color='#27ae60', linewidth=1.5, alpha=0.8, label='季線(50)')
+    ax1.plot(plot_df.index, plot_df['MA200'], color='#2980b9', linewidth=1.5, alpha=0.8, label='年線(200)')
+    ax1.axhline(y=poc_price, color='purple', linestyle='--', linewidth=1, alpha=0.6, label='籌碼密集區(POC)')
     
     ax1.set_title(f"{ticker} Daily Chart", fontsize=10, fontweight='bold')
     ax1.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
     ax1.legend(loc='upper left', fontsize='x-small', frameon=False, ncol=2)
     ax1.grid(True, linestyle=':', alpha=0.3)
     
+    # 下圖：RSI
     ax2.plot(plot_df.index, plot_df['RSI'], color='#8e44ad', linewidth=1)
     ax2.axhline(70, color='red', linestyle=':', linewidth=0.5)
     ax2.axhline(30, color='green', linestyle=':', linewidth=0.5)
@@ -217,6 +244,8 @@ def create_chart_image(df, ticker, poc_price):
     ax2.grid(True, linestyle=':', alpha=0.3)
     
     plt.tight_layout()
+    
+    # 轉為 Base64 圖片字串
     buf = io.BytesIO()
     plt.savefig(buf, format='png', transparent=False, facecolor='white')
     plt.close()
@@ -240,6 +269,7 @@ def process_single_stock(ticker):
         current_price = df_intraday['Close'].iloc[-1]
         last_dt = df_intraday.index[-1].strftime('%Y-%m-%d %H:%M')
 
+    # 指標運算
     df['MA20'] = df['Close'].rolling(20).mean()
     df['MA50'] = df['Close'].rolling(50).mean()
     df['MA200'] = df['Close'].rolling(200).mean()
@@ -254,7 +284,7 @@ def process_single_stock(ticker):
     curr_vol = df['Volume'].iloc[-1]
     rvol = curr_vol / avg_vol if avg_vol > 0 else 0
     
-    # R/R
+    # 風險報酬比 (R/R)
     support = df['MA50'].iloc[-1]
     resistance = df['High'].tail(252).max()
     if current_price >= resistance * 0.99: resistance = current_price * 1.2
@@ -272,7 +302,7 @@ def process_single_stock(ticker):
         rr_display = "⚠️ 風險高"
         rr_color = "#c0392b"
 
-    # Score
+    # 量化評分 (Score)
     score = 0
     if current_price > df['MA20'].iloc[-1]: score += 1
     if current_price > df['MA50'].iloc[-1]: score += 1
@@ -283,7 +313,7 @@ def process_single_stock(ticker):
     if current_price > poc_price: score += 1
     if rvol > 1.2: score += 1
 
-    # 數據包
+    # 數據包 (給 AI 或 備援用)
     data_dict = {
         'price': current_price,
         'ma20': df['MA20'].iloc[-1],
@@ -304,7 +334,7 @@ def process_single_stock(ticker):
         'market': 'TW' if is_tw else 'US'
     }
     
-    # 策略生成 (AI or Fallback)
+    # 策略生成 (優先 AI，失敗則備援)
     prompt = f"""
     量化交易員分析 {ticker}。
     Price: {current_price:.2f}, RVOL: {rvol:.2f}, ATR: {df['ATR'].iloc[-1]:.2f}, 
@@ -318,11 +348,13 @@ def process_single_stock(ticker):
     else:
         strategy_html = generate_fallback_strategy(ticker, data_dict)
     
+    # 產生圖表
     chart_html = create_chart_image(df, ticker, poc_price)
     
     rvol_color = "#d35400" if rvol > 1.2 else "#555"
     currency = "NT$" if is_tw else "$"
 
+    # 組合卡片 HTML
     card_html = f"""
     <div style="border:1px solid #e0e0e0; border-radius:12px; padding:16px; margin-bottom:20px; background-color: white; color: #333; {FONT_STYLE}">
         <div style="display:flex; justify-content:space-between; align-items:flex-start;">
@@ -395,9 +427,14 @@ def generate_ranking_html(rank_list):
 st.title("🚀 AI 量化操盤助手 (Streamlit 版)")
 st.markdown("""
 <div style='background-color:#e3f2fd; color:#0d47a1; padding:15px; border-radius:10px; margin-bottom:20px;'>
-    <b>混合分析模式：</b>優先嘗試連線 AI，若連線忙碌將自動切換至量化演算法，保證產出報告。
+    <b>混合分析模式：</b>優先嘗試連線 AI，若連線忙碌將自動切換至量化演算法，保證產出報告。<br>
+    <span style='font-size:12px; color:#555;'>已啟用中文圖表修正</span>
 </div>
 """, unsafe_allow_html=True)
+
+# 提醒使用者輸入 Key (如果沒設定)
+if not GEMINI_KEY:
+    st.warning("⚠️ 檢測到您尚未設定 API Key，系統將使用「演算法備援模式」。請至 Secrets 設定 GEMINI_API_KEY 以啟用 AI 分析。")
 
 # 側邊欄輸入
 with st.sidebar:
@@ -425,7 +462,7 @@ if run_btn:
         ranking_data = []
         cards_html_list = []
         
-        # 2. 進度條
+        # 2. 進度條設定
         progress_bar = st.progress(0)
         status_text = st.empty()
         
