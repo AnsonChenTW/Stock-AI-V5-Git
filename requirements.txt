@@ -1,6 +1,8 @@
-gradio
+streamlit
 yfinance
 pandas
+numpy
+matplotlib
+twstock
 requests
-beautifulsoup4
 lxml
