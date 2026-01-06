@@ -6,8 +6,6 @@ import matplotlib
 matplotlib.use('Agg') # 必須設定，防止在伺服器端報錯
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
-import matplotlib.font_manager as fm
-import platform
 import io
 import base64
 import re
@@ -28,37 +26,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
-# ==========================================
-# 🔤 解決 Matplotlib 中文亂碼 (強力修正版)
-# ==========================================
-def set_chinese_font():
-    system = platform.system()
-    
-    # 1. Windows 系統
-    if system == "Windows":
-        plt.rcParams['font.sans-serif'] = ['Microsoft JhengHei']
-        
-    # 2. Mac 系統
-    elif system == "Darwin":
-        plt.rcParams['font.sans-serif'] = ['Arial Unicode MS']
-        
-    # 3. Linux / Streamlit Cloud 系統
-    else:
-        # Streamlit Cloud 上，fonts-wqy-zenhei 安裝的路徑通常在這裡：
-        font_path = "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"
-        
-        # 如果檔案存在，強制加入字型管理員
-        if os.path.exists(font_path):
-            fm.fontManager.addfont(font_path) # 加入字型
-            plt.rcParams['font.family'] = ['WenQuanYi Zen Hei'] # 設定為預設
-        else:
-            # 備用方案：如果路徑找不到，嘗試直接用名稱
-            plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei']
-
-    plt.rcParams['axes.unicode_minus'] = False # 解決負號顯示為方塊的問題
-
-set_chinese_font() # 程式啟動時立即執行
 
 # ==========================================
 # 🔑 API Key 讀取與設定
@@ -142,7 +109,7 @@ def generate_fallback_strategy(ticker, d):
         action = "區間操作 (Range)"
         bg = "#fff3e0" # Orange bg
 
-    # 這裡移除了縮排，避免被當作程式碼區塊
+    # 注意：HTML 字串無縮排
     html = f"""
 <div style='background-color:{bg}; padding:12px; border-radius:8px; margin-top:10px; font-size:14px; line-height:1.6;'>
     <div style='font-weight:bold; color:#555; margin-bottom:5px;'>🤖 系統自動診斷 (AI 連線備援)</div>
@@ -160,7 +127,7 @@ def generate_fallback_strategy(ticker, d):
 
 def generate_fallback_brief(tickers):
     t_str = ", ".join(tickers)
-    # 這裡移除了縮排
+    # 注意：HTML 字串無縮排
     return f"""
 <h4>🚨 市場連線壅塞 (System Notice)</h4>
 <p>由於 Google AI 伺服器暫時無法回應 (IP Rate Limit)，本份早報由系統演算法自動生成。</p>
@@ -240,12 +207,12 @@ def create_chart_image(df, ticker, poc_price):
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(6, 5), dpi=90, gridspec_kw={'height_ratios': [3, 1]})
     fig.patch.set_facecolor('white') 
     
-    # 上圖：K線與均線
-    ax1.plot(plot_df.index, plot_df['Close'], color='#333', linewidth=1.5, label='收盤價')
-    ax1.plot(plot_df.index, plot_df['MA20'], color='#f39c12', linewidth=1, alpha=0.8, label='月線(20)')
-    ax1.plot(plot_df.index, plot_df['MA50'], color='#27ae60', linewidth=1.5, alpha=0.8, label='季線(50)')
-    ax1.plot(plot_df.index, plot_df['MA200'], color='#2980b9', linewidth=1.5, alpha=0.8, label='年線(200)')
-    ax1.axhline(y=poc_price, color='purple', linestyle='--', linewidth=1, alpha=0.6, label='籌碼密集區(POC)')
+    # 上圖：K線與均線 (改用英文標籤)
+    ax1.plot(plot_df.index, plot_df['Close'], color='#333', linewidth=1.5, label='Price')
+    ax1.plot(plot_df.index, plot_df['MA20'], color='#f39c12', linewidth=1, alpha=0.8, label='MA20')
+    ax1.plot(plot_df.index, plot_df['MA50'], color='#27ae60', linewidth=1.5, alpha=0.8, label='MA50')
+    ax1.plot(plot_df.index, plot_df['MA200'], color='#2980b9', linewidth=1.5, alpha=0.8, label='MA200')
+    ax1.axhline(y=poc_price, color='purple', linestyle='--', linewidth=1, alpha=0.6, label='POC')
     
     ax1.set_title(f"{ticker} Daily Chart", fontsize=10, fontweight='bold')
     ax1.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
@@ -370,7 +337,7 @@ def process_single_stock(ticker):
     rvol_color = "#d35400" if rvol > 1.2 else "#555"
     currency = "NT$" if is_tw else "$"
 
-    # 組合卡片 HTML (移除縮排)
+    # 組合卡片 HTML (注意：無縮排)
     card_html = f"""
 <div style="border:1px solid #e0e0e0; border-radius:12px; padding:16px; margin-bottom:20px; background-color: white; color: #333; {FONT_STYLE}">
     <div style="display:flex; justify-content:space-between; align-items:flex-start;">
@@ -412,7 +379,7 @@ def generate_ranking_html(rank_list):
     if not rank_list: return ""
     sorted_list = sorted(rank_list, key=lambda x: (x['score'], x['rvol']), reverse=True)
     
-    # 這裡移除了縮排
+    # 注意：HTML 字串無縮排
     html = f"""
 <div style='background-color:#f0f4c3; color:#33691e; padding:15px; border-radius:12px; margin-bottom:25px; border:2px solid #dce775; {FONT_STYLE}'>
     <h3 style='margin-top:0; border-bottom:1px solid #c0ca33; padding-bottom:10px;'>🏆 AI 資金效率排行榜</h3>
@@ -426,7 +393,7 @@ def generate_ranking_html(rank_list):
         score_color = "#2e7d32" if item['score'] >= 6 else "#f57f17" if item['score'] >= 4 else "#c62828"
         row_bg = "#f9fbe7" if i % 2 == 0 else "transparent"
         currency = "NT$" if item['market'] == "TW" else "$"
-        # 這裡移除了縮排
+        # 注意：HTML 字串無縮排
         html += f"""
         <tr style='background-color:{row_bg}; border-bottom:1px dashed #e6ee9c;'>
             <td style='padding:8px; font-weight:bold;'>#{rank_num}</td>
@@ -444,11 +411,11 @@ def generate_ranking_html(rank_list):
 # ==========================================
 
 st.title("🚀 AI 量化操盤助手 (Streamlit 版)")
-# 這裡移除了縮排
+# 注意：HTML 字串無縮排
 st.markdown(f"""
 <div style='background-color:#e3f2fd; color:#0d47a1; padding:15px; border-radius:10px; margin-bottom:20px;'>
     <b>混合分析模式：</b>優先嘗試連線 AI，若連線忙碌將自動切換至量化演算法，保證產出報告。<br>
-    <span style='font-size:12px; color:#555;'>已啟用中文圖表修正</span>
+    <span style='font-size:12px; color:#555;'>圖表已切換為英文顯示以確保相容性</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -524,7 +491,7 @@ if run_btn:
             # 5. 渲染結果
             
             # A. 早報區塊
-            # 這裡移除了縮排
+            # 注意：HTML 字串無縮排
             final_header = f"""
 <div style='background-color:#fffbeb; color:#2c3e50; padding:20px; border-radius:12px; margin-bottom:25px; border:2px solid #f1c40f; box-shadow: 0 4px 10px rgba(0,0,0,0.05); {FONT_STYLE}'>
     <h3 style='margin-top:0; color:#d35400; border-bottom:1px solid #f39c12; padding-bottom:10px;'>☕ 華爾街交易員早報 (Morning Brief)</h3>
