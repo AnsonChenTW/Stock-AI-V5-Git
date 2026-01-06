@@ -17,6 +17,8 @@ import requests
 import json
 import random
 import os
+# 新增: 用於解析新聞
+from bs4 import BeautifulSoup 
 
 # ==========================================
 # ⚙️ 頁面基礎設定 (中文標題)
@@ -40,6 +42,44 @@ except:
 
 # --- 全域樣式 ---
 FONT_STYLE = "font-family: -apple-system, system-ui, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;"
+
+# ==========================================
+# 📰 新聞爬蟲模組 (新增功能)
+# ==========================================
+@st.cache_data(ttl=600) # 新聞快取 10 分鐘
+def get_market_news(ticker):
+    """
+    簡單爬取 Google Finance 或 Yahoo Finance 的新聞標題
+    作為 AI 無法連線時的替代資訊來源。
+    """
+    news_list = []
+    
+    # 針對台股與美股做不同處理
+    is_tw = ".TW" in ticker or ".TWO" in ticker
+    search_query = ticker.replace(".TW", "").replace(".TWO", "")
+    
+    try:
+        # 使用 Yahoo Finance 的 RSS Feed (最穩定且免費)
+        url = f"https://finance.yahoo.com/rss/headline?s={ticker}"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url, headers=headers, timeout=4)
+        
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.content, features="xml")
+            items = soup.findAll('item')
+            for item in items[:3]: # 只抓最新的 3 則
+                title = item.title.text
+                link = item.link.text
+                # 簡單過濾掉太短的標題
+                if len(title) > 10:
+                    news_list.append(f"<li><a href='{link}' target='_blank' style='color:#333; text-decoration:none;'>📰 {title}</a></li>")
+    except:
+        pass
+
+    if not news_list:
+        return "<li>暫無即時新聞訊號 (No immediate news found)</li>"
+    
+    return "".join(news_list)
 
 # ==========================================
 # 🧠 核心：混合模式 (Hybrid Core)
@@ -71,10 +111,10 @@ def call_gemini_api(prompt):
     return None 
 
 # ==========================================
-# 🤖 演算法備援 (中文版)
+# 🤖 演算法備援 (整合新聞)
 # ==========================================
 
-def generate_fallback_strategy(ticker, d):
+def generate_fallback_strategy(ticker, d, news_html):
     # 趨勢文案 (中文)
     if d['price'] > d['ma20']:
         trend = "股價位於月線 (MA20) 之上，短線格局偏多"
@@ -109,15 +149,21 @@ def generate_fallback_strategy(ticker, d):
         action = "區間操作 (Range)"
         bg = "#fff3e0" # Orange bg
 
-    # 注意：HTML 字串無縮排
+    # HTML (包含新聞區塊)
     html = f"""
 <div style='background-color:{bg}; padding:12px; border-radius:8px; margin-top:10px; font-size:14px; line-height:1.6;'>
-<div style='font-weight:bold; color:#555; margin-bottom:5px;'>🤖 系統自動診斷 (AI 連線備援)</div>
+<div style='font-weight:bold; color:#555; margin-bottom:5px;'>🤖 系統自動診斷 (演算法 + 新聞搜索)</div>
 <ul style='margin:0; padding-left:20px;'>
 <li><b>{trend_icon} 趨勢：</b>{trend}。</li>
 <li><b>⚡ 動能：</b>{mom} (RSI: {d['rsi']:.0f})。</li>
 <li><b>🧱 籌碼：</b>{chip}。</li>
 </ul>
+<div style='margin-top:8px; padding-top:8px; border-top:1px dashed #ccc;'>
+    <div style='font-size:12px; color:#555; margin-bottom:3px;'><b>📰 市場消息 (News Feed):</b></div>
+    <ul style='margin:0; padding-left:20px; font-size:12px; color:#444;'>
+        {news_html}
+    </ul>
+</div>
 <hr style='border-top:1px dashed #ccc; margin:8px 0;'>
 <div><b>🎯 操作建議：{action}</b></div>
 <div style='font-size:12px; color:#777;'>建議停損：{d['atr']*2:.2f} (2xATR)</div>
@@ -127,14 +173,14 @@ def generate_fallback_strategy(ticker, d):
 
 def generate_fallback_brief(tickers):
     t_str = ", ".join(tickers)
-    # 注意：HTML 字串無縮排 (中文)
+    # 修改後的早報提示
     return f"""
-<h4>🚨 市場連線壅塞 (System Notice)</h4>
-<p>由於 Google AI 伺服器暫時無法回應 (IP Rate Limit)，本份早報由系統演算法自動生成。</p>
+<h4>🌐 複合式市場掃描 (Hybrid Market Scan)</h4>
+<p style='color:#666; font-size:14px;'>由於 AI 伺服器流量管制，本早報已自動切換為<b>「演算法量化 + 實時新聞抓取」</b>模式，確保資料即時性。</p>
 <ul>
 <li><b>今日觀察清單：</b>{t_str}。</li>
-<li><b>操作提醒：</b>請直接參考下方個股卡片中的<b>「量化評分 (Score)」</b>與<b>「R/R 風報比」</b>。</li>
-<li><b>資金流向：</b>評分 > 6 且 RVOL > 1.2 之個股，代表資金動能強勁。</li>
+<li><b>量化訊號：</b>請參考下方個股卡片中的<b>「量化評分 (Score)」</b>。</li>
+<li><b>市場消息：</b>系統已自動為每檔個股抓取最新 Yahoo Finance 新聞標題，請見各別分析卡片。</li>
 </ul>
 """
 
@@ -312,7 +358,10 @@ def process_single_stock(ticker):
         'market': 'TW' if is_tw else 'US'
     }
     
-    # AI 指令：要求使用繁體中文
+    # 抓取新聞 (無論 AI 是否連線都執行)
+    news_html = get_market_news(ticker)
+
+    # 策略生成
     prompt = f"""
     量化交易員分析 {ticker}。
     Price: {current_price:.2f}, RVOL: {rvol:.2f}, ATR: {df['ATR'].iloc[-1]:.2f}, 
@@ -324,15 +373,18 @@ def process_single_stock(ticker):
     
     if ai_result:
         strategy_html = f"<div>{ai_result}</div><div style='font-size:10px; color:#aaa; text-align:right;'>Analysis by Gemini</div>"
+        # 如果是 AI 回答，我們也可以選擇把新聞附在下面
+        strategy_html += f"<div style='margin-top:10px; font-size:12px; color:#555;'><b>📰 最新新聞快遞:</b><ul style='margin:0; padding-left:20px;'>{news_html}</ul></div>"
     else:
-        strategy_html = generate_fallback_strategy(ticker, data_dict)
+        # 如果 AI 掛了，使用內建演算法 + 新聞爬蟲
+        strategy_html = generate_fallback_strategy(ticker, data_dict, news_html)
     
     chart_html = create_chart_image(df, ticker, poc_price)
     
     rvol_color = "#d35400" if rvol > 1.2 else "#555"
     currency = "NT$" if is_tw else "$"
 
-    # 組合卡片 HTML (注意：無縮排)
+    # 組合卡片 HTML (無縮排)
     card_html = f"""
 <div style="border:1px solid #e0e0e0; border-radius:12px; padding:16px; margin-bottom:20px; background-color: white; color: #333; {FONT_STYLE}">
 <div style="display:flex; justify-content:space-between; align-items:flex-start;">
@@ -374,7 +426,7 @@ def generate_ranking_html(rank_list):
     if not rank_list: return ""
     sorted_list = sorted(rank_list, key=lambda x: (x['score'], x['rvol']), reverse=True)
     
-    # 排行榜標題改回中文，但表頭維持英文以求保險 (使用者要求)
+    # 排行榜標題改回中文，表頭英文
     html = f"""
 <div style='background-color:#f0f4c3; color:#33691e; padding:15px; border-radius:12px; margin-bottom:25px; border:2px solid #dce775; {FONT_STYLE}'>
 <h3 style='margin-top:0; border-bottom:1px solid #c0ca33; padding-bottom:10px;'>🏆 AI 資金效率排行榜</h3>
@@ -389,7 +441,7 @@ def generate_ranking_html(rank_list):
         row_bg = "#f9fbe7" if i % 2 == 0 else "transparent"
         currency = "NT$" if item['market'] == "TW" else "$"
         
-        # 注意：HTML 字串無縮排 (靠左對齊)
+        # HTML 字串無縮排
         html += f"""
 <tr style='background-color:{row_bg}; border-bottom:1px dashed #e6ee9c;'>
 <td style='padding:8px; font-weight:bold;'>#{rank_num}</td>
@@ -406,12 +458,11 @@ def generate_ranking_html(rank_list):
 # 🚀 Streamlit 主程式介面
 # ==========================================
 
-st.title("🚀 AI 量化操盤助手 (Streamlit 版)")
-# 注意：HTML 字串無縮排
+st.title("🚀 AI 量化操盤助手 (Pro)")
 st.markdown(f"""
 <div style='background-color:#e3f2fd; color:#0d47a1; padding:15px; border-radius:10px; margin-bottom:20px;'>
-    <b>混合分析模式：</b>優先嘗試連線 AI，若連線忙碌將自動切換至量化演算法，保證產出報告。<br>
-    <span style='font-size:12px; color:#555;'>圖表採用英文顯示以確保相容性</span>
+    <b>混合分析模式：</b>AI 分析 + 量化演算法 + 實時新聞掃描。<br>
+    <span style='font-size:12px; color:#555;'>圖表採用英文顯示，文字分析支援繁體中文。</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -475,7 +526,6 @@ if run_btn:
         else:
             # 4. 生成總結 (Header)
             with st.spinner("🤖 AI 正在撰寫華爾街早報..."):
-                # AI 指令：要求使用繁體中文
                 prompt = f"華爾街早報。股票：{', '.join(valid_tickers)}。宏觀與資金流向。精簡HTML。請使用繁體中文 (Traditional Chinese) 回答。"
                 ai_brief = call_gemini_api(prompt)
                 
@@ -484,8 +534,7 @@ if run_btn:
                 else:
                     brief_html = ai_brief
 
-            # A. 早報區塊 (恢復中文標題)
-            # 注意：HTML 字串無縮排
+            # A. 早報區塊
             final_header = f"""
 <div style='background-color:#fffbeb; color:#2c3e50; padding:20px; border-radius:12px; margin-bottom:25px; border:2px solid #f1c40f; box-shadow: 0 4px 10px rgba(0,0,0,0.05); {FONT_STYLE}'>
     <h3 style='margin-top:0; color:#d35400; border-bottom:1px solid #f39c12; padding-bottom:10px;'>☕ 華爾街交易員早報 (Morning Brief)</h3>
