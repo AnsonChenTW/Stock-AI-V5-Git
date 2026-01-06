@@ -3,37 +3,24 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import matplotlib
-# ---------------------------------------------------------
-# 🔧 強制重設 Matplotlib 設定
-# ---------------------------------------------------------
+import os
 import shutil
-import matplotlib.font_manager
 
+# ==========================================
+# 🔧 強制重設 Matplotlib 設定
+# ==========================================
 # 1. 刪除 Matplotlib 的快取資料夾 (核彈級解法)
-# 這會強迫 Matplotlib 下次執行時重新掃描系統字型
-cachedir = matplotlib.get_cachedir()
-if os.path.exists(cachedir):
-    shutil.rmtree(cachedir)
+# 這會強迫 Matplotlib 下次執行時重新掃描系統字型，解決方塊字殘留問題
+try:
+    cachedir = matplotlib.get_cachedir()
+    if os.path.exists(cachedir):
+        shutil.rmtree(cachedir)
+except Exception as e:
+    print(f"Warning: Could not clear matplotlib cache: {e}")
 
 # 2. 設定後端為 Agg (非互動式，適合伺服器)
 matplotlib.use('Agg') 
 
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-# ---------------------------------------------------------
-
-import io
-import base64
-import re
-import time
-# ... (後面的 import 和程式碼保持不變)
-
-import streamlit as st
-import yfinance as yf
-import pandas as pd
-import numpy as np
-import matplotlib
-matplotlib.use('Agg') # 必須設定，防止在伺服器端報錯
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import io
@@ -42,7 +29,6 @@ import re
 import time
 from datetime import datetime
 import pytz
-import os
 import requests
 import json
 import random
@@ -237,7 +223,7 @@ def create_chart_image(df, ticker, poc_price):
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(6, 5), dpi=90, gridspec_kw={'height_ratios': [3, 1]})
     fig.patch.set_facecolor('white') 
     
-    # 上圖：K線與均線 (改用英文標籤)
+    # 上圖：K線與均線 (強制使用英文標籤，避開中文亂碼)
     ax1.plot(plot_df.index, plot_df['Close'], color='#333', linewidth=1.5, label='Price')
     ax1.plot(plot_df.index, plot_df['MA20'], color='#f39c12', linewidth=1, alpha=0.8, label='MA20')
     ax1.plot(plot_df.index, plot_df['MA50'], color='#27ae60', linewidth=1.5, alpha=0.8, label='MA50')
@@ -426,115 +412,4 @@ def generate_ranking_html(rank_list):
         # 注意：HTML 字串無縮排
         html += f"""
         <tr style='background-color:{row_bg}; border-bottom:1px dashed #e6ee9c;'>
-            <td style='padding:8px; font-weight:bold;'>#{rank_num}</td>
-            <td style='padding:8px;'><b>{item['ticker']}</b></td>
-            <td style='padding:8px; color:{score_color}; font-weight:bold;'>{item['score']}/8</td>
-            <td style='padding:8px;'>{item['rvol']:.1f}x</td>
-            <td style='padding:8px;'>{currency}{item['price']:.2f}</td>
-        </tr>
-"""
-    html += "</table></div>"
-    return html
-
-# ==========================================
-# 🚀 Streamlit 主程式介面
-# ==========================================
-
-st.title("🚀 AI 量化操盤助手 (Streamlit 版)")
-# 注意：HTML 字串無縮排
-st.markdown(f"""
-<div style='background-color:#e3f2fd; color:#0d47a1; padding:15px; border-radius:10px; margin-bottom:20px;'>
-    <b>混合分析模式：</b>優先嘗試連線 AI，若連線忙碌將自動切換至量化演算法，保證產出報告。<br>
-    <span style='font-size:12px; color:#555;'>圖表已切換為英文顯示以確保相容性</span>
-</div>
-""", unsafe_allow_html=True)
-
-# 提醒使用者輸入 Key (如果沒設定)
-if not GEMINI_KEY:
-    st.warning("⚠️ 檢測到您尚未設定 API Key，系統將使用「演算法備援模式」。請至 Secrets 設定 GEMINI_API_KEY 以啟用 AI 分析。")
-
-# 側邊欄輸入
-with st.sidebar:
-    st.header("🔍 股票輸入")
-    us_input = st.text_area("🇺🇸 美股 (例如: TSM NVDA)", height=100)
-    tw_input = st.text_area("🇹🇼 台股 (例如: 2330 2603)", height=100)
-    run_btn = st.button("執行全方位分析", type="primary", use_container_width=True)
-    st.markdown("---")
-    st.markdown("Created with ❤️ by Streamlit")
-
-# 主執行邏輯
-if run_btn:
-    if not us_input and not tw_input:
-        st.warning("⚠️ 請至少輸入一支股票代號")
-    else:
-        # 1. 解析輸入
-        all_inputs = []
-        if us_input: all_inputs.extend(re.split(r'[ ,\n]+', us_input))
-        if tw_input: 
-            for t in re.split(r'[ ,\n]+', tw_input):
-                if t.strip() and t.isdigit(): all_inputs.append(f"{t}.TW")
-                elif t.strip(): all_inputs.append(t)
-        
-        valid_tickers = []
-        ranking_data = []
-        cards_html_list = []
-        
-        # 2. 進度條設定
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        total_stocks = len([x for x in all_inputs if x.strip()])
-        processed_count = 0
-
-        # 3. 逐一分析
-        for t in all_inputs:
-            if not t.strip(): continue
-            
-            status_text.text(f"正在分析: {t} ...")
-            
-            card, valid_ticker, rank_item = process_single_stock(t)
-            
-            if card:
-                cards_html_list.append(card)
-                valid_tickers.append(valid_ticker)
-                if rank_item: ranking_data.append(rank_item)
-            
-            processed_count += 1
-            progress_bar.progress(processed_count / total_stocks)
-
-        status_text.empty()
-        progress_bar.empty()
-
-        if not valid_tickers:
-            st.error("❌ 未找到有效股票數據")
-        else:
-            # 4. 生成總結 (Header)
-            with st.spinner("🤖 AI 正在撰寫華爾街早報..."):
-                prompt = f"華爾街早報。股票：{', '.join(valid_tickers)}。宏觀與資金流向。精簡HTML。"
-                ai_brief = call_gemini_api(prompt)
-                
-                if not ai_brief:
-                    brief_html = generate_fallback_brief(valid_tickers)
-                else:
-                    brief_html = ai_brief
-
-            # 5. 渲染結果
-            
-            # A. 早報區塊
-            # 注意：HTML 字串無縮排
-            final_header = f"""
-<div style='background-color:#fffbeb; color:#2c3e50; padding:20px; border-radius:12px; margin-bottom:25px; border:2px solid #f1c40f; box-shadow: 0 4px 10px rgba(0,0,0,0.05); {FONT_STYLE}'>
-    <h3 style='margin-top:0; color:#d35400; border-bottom:1px solid #f39c12; padding-bottom:10px;'>☕ 華爾街交易員早報 (Morning Brief)</h3>
-    <div style='font-size:15px; line-height:1.6;'>{brief_html}</div>
-</div>
-"""
-            st.markdown(final_header, unsafe_allow_html=True)
-
-            # B. 排行榜區塊
-            ranking_html = generate_ranking_html(ranking_data)
-            st.markdown(ranking_html, unsafe_allow_html=True)
-
-            # C. 個股卡片區塊
-            st.markdown("### 📊 個股深度分析")
-            for card_html in cards_html_list:
-                st.markdown(card_html, unsafe_allow_html=True)
+            <td style='padding:8px; font-weight:bold;'>#{rank_num
